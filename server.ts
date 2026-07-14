@@ -28,9 +28,7 @@ function getGeminiClient() {
   return aiClient;
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
 
   // Body parser for base64 images
   app.use(express.json({ limit: "50mb" }));
@@ -212,24 +210,29 @@ Respond strictly in JSON format matching the following structure:
     }
   });
 
-  // Vite integration for dev server or static server in production
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+  // Standalone listener (only runs if not on Vercel)
+  if (!process.env.VERCEL) {
+    const PORT = 3000;
+    if (process.env.NODE_ENV !== "production") {
+      createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      }).then((vite) => {
+        app.use(vite.middlewares);
+        app.listen(PORT, "0.0.0.0", () => {
+          console.log(`Server running on http://localhost:${PORT}`);
+        });
+      });
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    }
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
-
-startServer();
+export default app;
