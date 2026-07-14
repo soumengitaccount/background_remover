@@ -120,50 +120,12 @@ export default function App() {
         message: "",
       });
     } catch (error: any) {
-      console.warn("Server-side background removal failed. Falling back to high-performance client-side browser AI engine...", error);
-      
-      try {
-        setProgress({
-          status: "loading_model",
-          percent: 50,
-          message: "Starting browser AI engine (running 100% locally in your browser)...",
-        });
-
-        // Dynamically import client-side background removal to keep bundle size lightweight
-        const { removeBackground: imglyRemoveBackground } = await import("@imgly/background-removal");
-        
-        setProgress({
-          status: "processing",
-          percent: 70,
-          message: "Browser AI: segmenting image (first run downloads model files to browser cache)...",
-        });
-
-        const resultBlob = await imglyRemoveBackground(imageSource, {
-          progress: (status: string, val: number) => {
-            const displayPercent = val <= 1 ? Math.round(val * 100) : Math.round(val);
-            setProgress({
-              status: "processing",
-              percent: Math.round(50 + (displayPercent * 0.45)),
-              message: `Browser AI: ${status.replace(/_/g, " ")} (${displayPercent}%)...`,
-            });
-          }
-        });
-
-        const url = URL.createObjectURL(resultBlob);
-        setProcessedUrl(url);
-        setProgress({
-          status: "idle",
-          percent: 100,
-          message: "",
-        });
-      } catch (clientError: any) {
-        console.error("Client-side background removal fallback also failed:", clientError);
-        setProgress({
-          status: "failed",
-          percent: 0,
-          message: `Background removal failed: ${error.message || "Server error"}. Local fallback error: ${clientError.message || "Browser error"}.`,
-        });
-      }
+      console.error("Background removal error:", error);
+      setProgress({
+        status: "failed",
+        percent: 0,
+        message: error.message || "Failed to remove background. Please try another image.",
+      });
     }
   };
 

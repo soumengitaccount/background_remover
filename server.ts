@@ -210,29 +210,29 @@ Respond strictly in JSON format matching the following structure:
     }
   });
 
-  // Standalone listener (only runs if not on Vercel)
-  if (!process.env.VERCEL) {
-    const PORT = 3000;
-    if (process.env.NODE_ENV !== "production") {
-      createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      }).then((vite) => {
-        app.use(vite.middlewares);
-        app.listen(PORT, "0.0.0.0", () => {
-          console.log(`Server running on http://localhost:${PORT}`);
-        });
-      });
-    } else {
-      const distPath = path.join(process.cwd(), "dist");
-      app.use(express.static(distPath));
-      app.get("*", (req, res) => {
-        res.sendFile(path.join(distPath, "index.html"));
-      });
+// Vite integration for dev server or static server in production
+if (!process.env.VERCEL) {
+  const PORT = 3000;
+  if (process.env.NODE_ENV !== "production") {
+    createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    }).then((vite) => {
+      app.use(vite.middlewares);
       app.listen(PORT, "0.0.0.0", () => {
-        console.log(`Server running on port ${PORT}`);
+        console.log(`Server running on http://localhost:${PORT}`);
       });
-    }
+    });
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
+    });
   }
+}
 
 export default app;
