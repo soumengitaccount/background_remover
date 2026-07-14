@@ -1,216 +1,113 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
-import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
-import { removeBackground } from "@imgly/background-removal-node";
+import { Request as ExpressRequest, Response as ExpressResponse } from "express";
+
+// Import Cloudflare Pages Function handlers
+import { onRequestGet as proxyImageHandler } from "./functions/api/proxy-image";
+import { onRequestPost as removeBackgroundHandler } from "./functions/api/remove-background";
+import { onRequestPost as analyzeImageHandler } from "./functions/api/analyze-image";
+import { onRequestPost as generateBackgroundHandler } from "./functions/api/generate-background";
 
 dotenv.config();
 
-// Lazy initialization of Gemini as recommended by Guidelines
-let aiClient: GoogleGenAI | null = null;
+/**
+ * Adapter to translate Express request/response into standard Web Request/Response objects
+ * and invoke a Cloudflare Pages Function.
+ */
+async function runPagesFunction(
+  handler: any,
+  req: ExpressRequest,
+  res: ExpressResponse
+) {
+  try {
+    const protocol = req.protocol;
+    const host = req.get("host");
+    const fullUrl = `${protocol}://${host}${req.originalUrl}`;
 
-function getGeminiClient() {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is required in secrets");
+    // Read and serialize body for POST/PUT/PATCH requests
+    let body: any = undefined;
+    if (["POST", "PUT", "PATCH"].includes(req.method)) {
+      if (typeof req.body === "object") {
+        body = JSON.stringify(req.body);
+      } else {
+        body = req.body;
+      }
     }
-    aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
+
+    // Map Express headers to standard Headers
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (Array.isArray(value)) {
+        value.forEach((v) => headers.append(key, v));
+      } else if (value !== undefined) {
+        headers.set(key, value);
+      }
+    }
+
+    const webRequest = new Request(fullUrl, {
+      method: req.method,
+      headers,
+      body,
     });
+
+    // Create Cloudflare Pages event context
+    const context = {
+      request: webRequest,
+      functionPath: req.path,
+      waitUntil: (promise: Promise<any>) => {
+        promise.catch((err) => console.error("Error in waitUntil:", err));
+      },
+      next: async () => {
+        return new Response("Not implemented", { status: 501 });
+      },
+      env: {
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+      },
+      params: req.params,
+      data: {},
+    };
+
+    // Execute the Cloudflare Pages Function handler
+    const webResponse = await handler(context);
+
+    // Send status code
+    res.status(webResponse.status);
+
+    // Map standard response headers back to Express response headers
+    webResponse.headers.forEach((value: string, key: string) => {
+      res.setHeader(key, value);
+    });
+
+    // Send response body
+    const contentType = webResponse.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      const json = await webResponse.json();
+      res.json(json);
+    } else {
+      const arrayBuffer = await webResponse.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
+    }
+  } catch (error: any) {
+    console.error("Pages Function Adapter Error:", error);
+    res.status(500).send("Internal Server Error in Pages adapter: " + error.message);
   }
-  return aiClient;
 }
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Body parser for base64 images
+  // Body parser for base64 images & payload handling
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-  // CORS Proxy for external assets to prevent canvas tainting
-  app.get("/api/proxy-image", async (req, res) => {
-    try {
-      const imageUrl = req.query.url as string;
-      if (!imageUrl) {
-        return res.status(400).send("URL parameter is required");
-      }
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-      }
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const contentType = response.headers.get("content-type") || "image/jpeg";
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.send(buffer);
-    } catch (error: any) {
-      console.error("Proxy image error:", error);
-      res.status(500).send("Failed to proxy image: " + error.message);
-    }
-  });
-
-  // API Route: Remove image background using server-side deep learning
-  app.post("/api/remove-background", async (req, res) => {
-    try {
-      const { image, mimeType } = req.body;
-      if (!image) {
-        return res.status(400).send("Image parameter is required");
-      }
-
-      const buffer = Buffer.from(image, "base64");
-      // Must wrap in a typed Blob in Node.js to prevent "Unsupported format" error in @imgly/background-removal-node
-      const blob = new Blob([buffer], { type: mimeType || "image/png" });
-      
-      // Run background removal model on Node.js
-      const resultBlob = await removeBackground(blob);
-      const arrayBuffer = await resultBlob.arrayBuffer();
-      const outputBuffer = Buffer.from(arrayBuffer);
-      const base64 = outputBuffer.toString("base64");
-
-      res.json({ image: base64 });
-    } catch (error: any) {
-      console.error("Server-side background removal error:", error);
-      res.status(500).send("Failed to remove background: " + error.message);
-    }
-  });
-
-  // API Route: Analyze Image & suggest backgrounds (using gemini-3.5-flash, free)
-  app.post("/api/analyze-image", async (req, res) => {
-    try {
-      const { image, mimeType } = req.body;
-      if (!image || !mimeType) {
-        return res.status(400).json({ error: "Image data and mimeType are required" });
-      }
-
-      const ai = getGeminiClient();
-      const imagePart = {
-        inlineData: {
-          mimeType,
-          data: image,
-        },
-      };
-
-      const promptPart = {
-        text: `Analyze this image and identify the primary foreground subject. 
-Provide a descriptive title/label, a brief description of the subject, and 5 creative, highly specific prompt ideas for generating custom background backdrops that would complement this subject beautifully (e.g. "a pristine oak wood table with soft bokeh lighting", "a professional minimalist photography studio with soft shadows", "an architectural concrete display stand").
-Respond strictly in JSON format matching the following structure:
-{
-  "subjectTitle": "short name of subject",
-  "subjectDescription": "brief description of subject",
-  "backgroundSuggestions": [
-    {
-      "theme": "Studio / Catalog",
-      "prompt": "prompt text"
-    },
-    ...
-  ]
-}`,
-      };
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: { parts: [imagePart, promptPart] },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              subjectTitle: { type: Type.STRING },
-              subjectDescription: { type: Type.STRING },
-              backgroundSuggestions: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    theme: { type: Type.STRING },
-                    prompt: { type: Type.STRING },
-                  },
-                  required: ["theme", "prompt"],
-                },
-              },
-            },
-            required: ["subjectTitle", "subjectDescription", "backgroundSuggestions"],
-          },
-        },
-      });
-
-      const resultText = response.text;
-      if (!resultText) {
-        throw new Error("No response text from Gemini API");
-      }
-
-      res.json(JSON.parse(resultText));
-    } catch (error: any) {
-      console.error("Error analyzing image:", error);
-      res.status(500).json({ error: error.message || "Failed to analyze image" });
-    }
-  });
-
-  // API Route: Generate AI background backdrop (using gemini-3.1-flash-lite-image, paid)
-  app.post("/api/generate-background", async (req, res) => {
-    try {
-      const { image, mimeType, prompt } = req.body;
-      if (!image || !mimeType || !prompt) {
-        return res.status(400).json({ error: "Image, mimeType, and prompt are required" });
-      }
-
-      const ai = getGeminiClient();
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-flash-lite-image",
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: image,
-                mimeType,
-              },
-            },
-            {
-              text: `Place this foreground subject on a newly generated background. The background should be: "${prompt}". Blend the subject seamlessly into this background with matching light source, professional shadows, and clean edges. Keep the subject itself completely unmodified, realistic, and intact.`,
-            },
-          ],
-        },
-      });
-
-      let base64Image = "";
-      if (response.candidates?.[0]?.content?.parts) {
-        for (const part of response.candidates[0].content.parts) {
-          if (part.inlineData?.data) {
-            base64Image = part.inlineData.data;
-            break;
-          }
-        }
-      }
-
-      if (!base64Image) {
-        let textResponse = "";
-        if (response.candidates?.[0]?.content?.parts) {
-          for (const part of response.candidates[0].content.parts) {
-            if (part.text) {
-              textResponse += part.text;
-            }
-          }
-        }
-        throw new Error(textResponse || "Failed to generate image backdrop. Ensure your API key has access to image editing models.");
-      }
-
-      res.json({ image: base64Image });
-    } catch (error: any) {
-      console.error("Error generating background:", error);
-      res.status(500).json({ error: error.message || "Failed to generate background" });
-    }
-  });
+  // Route incoming API requests to Cloudflare Pages Function adapters
+  app.get("/api/proxy-image", (req, res) => runPagesFunction(proxyImageHandler, req, res));
+  app.post("/api/remove-background", (req, res) => runPagesFunction(removeBackgroundHandler, req, res));
+  app.post("/api/analyze-image", (req, res) => runPagesFunction(analyzeImageHandler, req, res));
+  app.post("/api/generate-background", (req, res) => runPagesFunction(generateBackgroundHandler, req, res));
 
   // Vite integration for dev server or static server in production
   if (process.env.NODE_ENV !== "production") {
