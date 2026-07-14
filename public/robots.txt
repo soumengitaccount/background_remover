@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Sitemap configuration (update domain when deploying to custom domain)
+Sitemap: sitemap.xml
