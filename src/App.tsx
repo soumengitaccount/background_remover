@@ -92,7 +92,7 @@ export default function App() {
         throw new Error(errText || "Background removal failed on the server.");
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as { image: string };
       if (!data.image) {
         throw new Error("Invalid output returned from background removal server.");
       }

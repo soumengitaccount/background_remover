@@ -42,7 +42,7 @@ export const AIBackdropManager: React.FC<AIBackdropManagerProps> = ({
       });
 
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
+        const errorData = (await res.json().catch(() => ({}))) as any;
         const msg = errorData.error || `Error: ${res.status}`;
         if (msg.includes("GEMINI_API_KEY")) {
           setHasSecretError(true);
@@ -86,11 +86,11 @@ export const AIBackdropManager: React.FC<AIBackdropManagerProps> = ({
       });
 
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
+        const errorData = (await res.json().catch(() => ({}))) as any;
         throw new Error(errorData.error || `Error generating background: ${res.status}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as { image?: string };
       if (data.image) {
         const url = `data:image/png;base64,${data.image}`;
         onApplyAiBackground(url);
