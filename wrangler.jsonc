@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "background-remover-ai",
+  "pages_build_output_dir": "dist",
+  "main": "./_worker.js", // 1. CRITICAL: Points to your dynamic server-side entry file
+  "compatibility_date": "2026-07-15",
+  "assets": {
+    "directory": "./dist", // 2. Points ONLY to your static folder (HTML, CSS, JS bundles)
+    "binding": "ASSETS"
+  }
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
