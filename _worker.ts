@@ -1,7 +1,7 @@
-import { onRequestGet as proxyImageHandler } from "../functions/api/proxy-image";
-import { onRequestPost as removeBackgroundHandler } from "../functions/api/remove-background";
-import { onRequestPost as analyzeImageHandler } from "../functions/api/analyze-image";
-import { onRequestPost as generateBackgroundHandler } from "../functions/api/generate-background";
+import { onRequestGet as proxyImageHandler } from "./functions/api/proxy-image";
+import { onRequestPost as removeBackgroundHandler } from "./functions/api/remove-background";
+import { onRequestPost as analyzeImageHandler } from "./functions/api/analyze-image";
+import { onRequestPost as generateBackgroundHandler } from "./functions/api/generate-background";
 
 export interface Env {
   GEMINI_API_KEY?: string;
