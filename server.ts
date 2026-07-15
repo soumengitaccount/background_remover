@@ -97,7 +97,7 @@ async function runPagesFunction(
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = 3000;
 
   // Body parser for base64 images & payload handling
   app.use(express.json({ limit: "50mb" }));
