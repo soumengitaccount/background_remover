@@ -1,5 +1,4 @@
 import { PagesFunction, Env } from "../types";
-import { removeBackground } from "@imgly/background-removal-node";
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
@@ -11,6 +10,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const buffer = Buffer.from(image, "base64");
     // Must wrap in a typed Blob in Node.js to prevent "Unsupported format" error
     const blob = new Blob([buffer], { type: mimeType || "image/png" });
+
+    // Dynamic import to prevent startup crashes in environments missing native dependencies
+    const { removeBackground } = await import("@imgly/background-removal-node");
 
     // Run background removal model
     const resultBlob = await removeBackground(blob as any);

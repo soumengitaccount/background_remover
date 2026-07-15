@@ -1,5 +1,3 @@
-import { AppLoadContext, createCookieSessionStorage } from "@remix-run/cloudflare";
-
 export interface Env {
   GEMINI_API_KEY?: string;
   SESSION_SECRET?: string;
@@ -30,8 +28,9 @@ export type PagesFunction<
 /**
  * Configure cookie session storage helper using @remix-run/cloudflare
  */
-export function getSessionStorage(env: Env) {
+export async function getSessionStorage(env: Env) {
   const secret = env.SESSION_SECRET || "default-session-secret-change-me-in-production";
+  const { createCookieSessionStorage } = await import("@remix-run/cloudflare");
   return createCookieSessionStorage({
     cookie: {
       name: "__session",
