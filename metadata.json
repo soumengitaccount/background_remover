@@ -1,5 +1,5 @@
 {
-  "name": "Background remover ai",
+  "name": "Background remover",
   "description": "Take a photo, choose from gallery or try presets to automatically remove backgrounds with AI and save as transparent PNGs or custom studio backdrops.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
