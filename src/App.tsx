@@ -21,12 +21,19 @@ import { GalleryPresets, PRESETS } from "./components/GalleryPresets";
 import { CameraCapture } from "./components/CameraCapture";
 import { ImageComparison } from "./components/ImageComparison";
 import { AIBackdropManager } from "./components/AIBackdropManager";
+import { OptimizationSettings } from "./components/OptimizationSettings";
 
 export default function App() {
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [originalBase64, setOriginalBase64] = useState<string | null>(null);
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>("image/png");
+  
+  // Performance optimizations
+  const [modelType, setModelType] = useState<"isnet" | "isnet_fp16" | "isnet_quint8">("isnet_fp16");
+  const [device, setDevice] = useState<"cpu" | "gpu">("gpu");
+  const [proxyToWorker, setProxyToWorker] = useState<boolean>(true);
+  const [originalFile, setOriginalFile] = useState<File | Blob | null>(null);
   
   // UI states
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -60,25 +67,29 @@ export default function App() {
   };
 
   // Run AI Background Removal fully client-side using @imgly/background-removal
-  const runBackgroundRemoval = async (imageSource: File | Blob) => {
+  const runBackgroundRemoval = async (imageSource: File | Blob, customModel = modelType, customDevice = device, customProxy = proxyToWorker) => {
+    const modelLabel = customModel === "isnet_quint8" ? "8-bit Fast" : customModel === "isnet_fp16" ? "16-bit Balanced" : "32-bit HQ";
     setProgress({
       status: "loading_model",
       percent: 5,
-      message: "Initializing AI background removal engine (takes a few seconds on first run)...",
+      message: `Initializing AI Engine (using ${modelLabel} model on ${customDevice.toUpperCase()})...`,
     });
 
     try {
       const resultBlob = await removeBackground(imageSource, {
+        model: customModel,
+        device: customDevice,
+        proxyToWorker: customProxy,
         progress: (key: string, current: number, total: number) => {
           const percent = Math.round((current / total) * 100);
           let message = "AI processing image...";
           
           if (key.includes("fetch")) {
-            message = "Downloading background removal model assets...";
+            message = `Downloading background removal model assets (${modelLabel})...`;
           } else if (key.includes("model") || key.includes("load")) {
             message = "Loading neural network into memory...";
           } else if (key.includes("compute") || key.includes("process")) {
-            message = "Segmenting subject and background...";
+            message = `Segmenting subject on ${customDevice.toUpperCase()}...`;
           } else {
             message = `${key.charAt(0).toUpperCase() + key.slice(1)}...`;
           }
@@ -135,6 +146,7 @@ export default function App() {
       const base64 = await fileToBase64(blob);
       setOriginalUrl(proxyUrl);
       setOriginalBase64(base64);
+      setOriginalFile(blob);
       
       // Start processing
       runBackgroundRemoval(blob);
@@ -173,6 +185,7 @@ export default function App() {
       const base64 = await fileToBase64(file);
       setOriginalUrl(localUrl);
       setOriginalBase64(base64);
+      setOriginalFile(file);
 
       // Start processing
       runBackgroundRemoval(file);
@@ -224,6 +237,7 @@ export default function App() {
       // Convert dataUrl to Blob for model
       const res = await fetch(dataUrl);
       const blob = await res.blob();
+      setOriginalFile(blob);
 
       runBackgroundRemoval(blob);
     } catch (err: any) {
@@ -347,6 +361,7 @@ export default function App() {
     setOriginalUrl(null);
     setOriginalBase64(null);
     setProcessedUrl(null);
+    setOriginalFile(null);
     setSelectedPresetId(undefined);
     setBgConfig({ type: "transparent", value: "" });
     setProgress({ status: "idle", percent: 0, message: "" });
@@ -483,6 +498,17 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {/* Performance Engine Optimization Settings */}
+            <OptimizationSettings
+              modelType={modelType}
+              setModelType={setModelType}
+              device={device}
+              setDevice={setDevice}
+              proxyToWorker={proxyToWorker}
+              setProxyToWorker={setProxyToWorker}
+              isProcessing={progress.status !== "idle"}
+            />
 
             {/* Preset Samples */}
             <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 p-5 rounded-3xl shadow-xs">
@@ -729,6 +755,18 @@ export default function App() {
                   </div>
                 )}
               </div>
+
+              {/* Performance Engine Optimization Settings */}
+              <OptimizationSettings
+                modelType={modelType}
+                setModelType={setModelType}
+                device={device}
+                setDevice={setDevice}
+                proxyToWorker={proxyToWorker}
+                setProxyToWorker={setProxyToWorker}
+                onReprocess={() => originalFile && runBackgroundRemoval(originalFile)}
+                isProcessing={progress.status !== "idle"}
+              />
 
               {/* Card 2: AI Backdrop Generator Panel (Visible when ready) */}
               {processedUrl && originalBase64 && (
