@@ -19,6 +19,7 @@ import { ProcessingProgress, BgConfig, PresetImage } from "./types";
 import { GalleryPresets, PRESETS } from "./components/GalleryPresets";
 import { CameraCapture } from "./components/CameraCapture";
 import { ImageComparison } from "./components/ImageComparison";
+import { AIBackdropManager } from "./components/AIBackdropManager";
 
 export default function App() {
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
@@ -91,7 +92,7 @@ export default function App() {
         throw new Error(errText || "Background removal failed on the server.");
       }
 
-      const data = (await response.json()) as { image: string };
+      const data = await response.json();
       if (!data.image) {
         throw new Error("Invalid output returned from background removal server.");
       }
@@ -270,6 +271,15 @@ export default function App() {
   const handleExport = () => {
     if (!processedUrl) return;
 
+    // If AI background is pre-blended on the server, download it directly
+    if (bgConfig.type === "ai" && bgConfig.value) {
+      const link = document.createElement("a");
+      link.download = `ai-backdrop-${Date.now()}.png`;
+      link.href = bgConfig.value;
+      link.click();
+      return;
+    }
+
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -376,6 +386,13 @@ export default function App() {
     }
     if (bgConfig.type === "custom") {
       return { 
+        backgroundImage: `url(${bgConfig.value})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center"
+      };
+    }
+    if (bgConfig.type === "ai") {
+      return {
         backgroundImage: `url(${bgConfig.value})`,
         backgroundSize: "cover",
         backgroundPosition: "center"
@@ -583,8 +600,8 @@ export default function App() {
                   </h3>
                 </div>
 
-                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
-                  {(["transparent", "solid", "gradient", "custom"] as const).map((type) => (
+                <div className="grid grid-cols-5 gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
+                  {(["transparent", "solid", "gradient", "custom", "ai"] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => {
@@ -592,6 +609,7 @@ export default function App() {
                         else if (type === "solid") setBgConfig({ type, value: "#ffffff" });
                         else if (type === "gradient") setBgConfig({ type, value: "grad-sunset" });
                         else if (type === "custom") setBgConfig({ type, value: bgConfig.type === "custom" ? bgConfig.value : "" });
+                        // For AI backdrop, do not reset if already set
                       }}
                       id={`bg-tab-${type}`}
                       className={`py-1.5 text-[10px] font-bold uppercase rounded-lg transition-all cursor-pointer ${
@@ -709,7 +727,38 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
+                {bgConfig.type === "ai" && (
+                  <div className="space-y-2 bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-2xl animate-in fade-in duration-200">
+                    <div className="flex items-start gap-2.5">
+                      <Sparkles className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          AI Generated Backdrop Active
+                        </h4>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Use the Gemini AI tool below to write a prompt and generate beautiful custom backdrops.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Card 2: AI Backdrop Generator Panel (Visible when ready) */}
+              {processedUrl && originalBase64 && (
+                <AIBackdropManager
+                  imageBase64={originalBase64}
+                  mimeType={mimeType}
+                  onApplyAiBackground={(aiImageUrl) => {
+                    setBgConfig({
+                      type: "ai",
+                      value: aiImageUrl,
+                    });
+                  }}
+                  disabled={progress.status !== "idle"}
+                />
+              )}
 
               {/* Card 3: Download and Reset Actions */}
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-xs space-y-3">
@@ -751,6 +800,7 @@ export default function App() {
           <p className="flex items-center gap-1">
             Processed fully on-device with
             <span className="font-bold text-emerald-500">WebAssembly</span>
+            & Gemini
           </p>
         </div>
       </footer>

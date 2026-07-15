@@ -6,11 +6,22 @@ export interface PresetImage {
   mimeType: string;
 }
 
-export type BgType = "transparent" | "solid" | "gradient" | "custom";
+export interface BackgroundSuggestion {
+  theme: string;
+  prompt: string;
+}
+
+export interface AnalysisResult {
+  subjectTitle: string;
+  subjectDescription: string;
+  backgroundSuggestions: BackgroundSuggestion[];
+}
+
+export type BgType = "transparent" | "solid" | "gradient" | "custom" | "ai";
 
 export interface BgConfig {
   type: BgType;
-  value: string; // Hex color, CSS gradient class, or base64 data
+  value: string; // Hex color, CSS gradient class, base64 data, or generated AI URL
 }
 
 export interface ProcessingProgress {
