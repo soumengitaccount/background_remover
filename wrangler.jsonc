@@ -2,12 +2,12 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "backgroundremover",
   "compatibility_date": "2026-07-15",
-  "pages_build_output_dir": "./dist",
   "main": "./dist/_worker.js",
   "observability": {
     "enabled": true
   },
   "assets": {
+    "directory": "./dist",
     "not_found_handling": "none"
   },
   "compatibility_flags": [
