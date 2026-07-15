@@ -14,6 +14,7 @@ import {
   HelpCircle,
   FileImage
 } from "lucide-react";
+import { removeBackground } from "@imgly/background-removal";
 
 import { ProcessingProgress, BgConfig, PresetImage } from "./types";
 import { GalleryPresets, PRESETS } from "./components/GalleryPresets";
@@ -58,59 +59,43 @@ export default function App() {
     });
   };
 
-  // Run AI Background Removal (Server-side powered for 100% reliability in sandbox)
+  // Run AI Background Removal fully client-side using @imgly/background-removal
   const runBackgroundRemoval = async (imageSource: File | Blob) => {
     setProgress({
       status: "loading_model",
-      percent: 15,
-      message: "Uploading image to AI processing server...",
+      percent: 5,
+      message: "Initializing AI background removal engine (takes a few seconds on first run)...",
     });
 
     try {
-      const base64WithHeader = await fileToBase64(imageSource);
-      const base64Payload = base64WithHeader.split(",")[1] || base64WithHeader;
+      const resultBlob = await removeBackground(imageSource, {
+        progress: (key: string, current: number, total: number) => {
+          const percent = Math.round((current / total) * 100);
+          let message = "AI processing image...";
+          
+          if (key.includes("fetch")) {
+            message = "Downloading background removal model assets...";
+          } else if (key.includes("model") || key.includes("load")) {
+            message = "Loading neural network into memory...";
+          } else if (key.includes("compute") || key.includes("process")) {
+            message = "Segmenting subject and background...";
+          } else {
+            message = `${key.charAt(0).toUpperCase() + key.slice(1)}...`;
+          }
 
-      setProgress({
-        status: "processing",
-        percent: 45,
-        message: "AI segmenting background (cached models run in 1-2s)...",
-      });
-
-      const response = await fetch("/api/remove-background", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+          setProgress({
+            status: "processing",
+            percent,
+            message: `${message} (${percent}%)`,
+          });
         },
-        body: JSON.stringify({
-          image: base64Payload,
-          mimeType: imageSource.type || mimeType || "image/png",
-        }),
       });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || "Background removal failed on the server.");
-      }
-
-      const data = await response.json();
-      if (!data.image) {
-        throw new Error("Invalid output returned from background removal server.");
-      }
 
       setProgress({
         status: "processing",
-        percent: 85,
+        percent: 95,
         message: "Rendering transparent subject...",
       });
-
-      // Convert returned base64 back to transparent PNG Blob
-      const byteCharacters = atob(data.image);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const resultBlob = new Blob([byteArray], { type: "image/png" });
 
       const url = URL.createObjectURL(resultBlob);
       setProcessedUrl(url);
