@@ -14,6 +14,7 @@
     "@google/genai": "^2.4.0",
     "@imgly/background-removal": "^1.7.0",
     "@imgly/background-removal-node": "^1.4.5",
+    "@cloudflare/workers-types": "^5.20260715.1",
     "@remix-run/cloudflare": "^2.17.5",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",

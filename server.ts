@@ -7,8 +7,6 @@ import { Request as ExpressRequest, Response as ExpressResponse } from "express"
 // Import Cloudflare Pages Function handlers
 import { onRequestGet as proxyImageHandler } from "./functions/api/proxy-image";
 import { onRequestPost as removeBackgroundHandler } from "./functions/api/remove-background";
-import { onRequestPost as analyzeImageHandler } from "./functions/api/analyze-image";
-import { onRequestPost as generateBackgroundHandler } from "./functions/api/generate-background";
 
 dotenv.config();
 
@@ -106,8 +104,6 @@ async function startServer() {
   // Route incoming API requests to Cloudflare Pages Function adapters
   app.get("/api/proxy-image", (req, res) => runPagesFunction(proxyImageHandler, req, res));
   app.post("/api/remove-background", (req, res) => runPagesFunction(removeBackgroundHandler, req, res));
-  app.post("/api/analyze-image", (req, res) => runPagesFunction(analyzeImageHandler, req, res));
-  app.post("/api/generate-background", (req, res) => runPagesFunction(generateBackgroundHandler, req, res));
 
   // Vite integration for dev server or static server in production
   if (process.env.NODE_ENV !== "production") {
