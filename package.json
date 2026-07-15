@@ -2,10 +2,10 @@
   "name": "react-example",
   "private": true,
   "version": "0.0.0",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild _worker.ts --bundle --platform=neutral --external:*.node --format=esm --minify --external:@imgly/background-removal-node --outfile=dist/_worker.js --external:onnxruntime-node --external:sharp",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild _worker.ts --bundle --platform=neutral --format=esm --minify --external:@imgly/background-removal-node --outfile=dist/_worker.js",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
