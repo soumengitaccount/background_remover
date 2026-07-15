@@ -15,7 +15,7 @@ export default defineConfig(() => {
       },
     },
     ssr: {
-    external: ['onnxruntime-node'],
+    external: ['onnxruntime-node','sharp'],
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
