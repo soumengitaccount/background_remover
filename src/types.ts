@@ -17,7 +17,7 @@ export interface AnalysisResult {
   backgroundSuggestions: BackgroundSuggestion[];
 }
 
-export type BgType = "transparent" | "solid" | "gradient" | "custom" | "ai";
+export type BgType = "transparent" | "solid" | "gradient" | "custom";
 
 export interface BgConfig {
   type: BgType;

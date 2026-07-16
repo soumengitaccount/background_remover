@@ -14,26 +14,17 @@ import {
   HelpCircle,
   FileImage
 } from "lucide-react";
-import { removeBackground } from "@imgly/background-removal";
 
 import { ProcessingProgress, BgConfig, PresetImage } from "./types";
 import { GalleryPresets, PRESETS } from "./components/GalleryPresets";
 import { CameraCapture } from "./components/CameraCapture";
 import { ImageComparison } from "./components/ImageComparison";
-import { AIBackdropManager } from "./components/AIBackdropManager";
-import { OptimizationSettings } from "./components/OptimizationSettings";
 
 export default function App() {
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [originalBase64, setOriginalBase64] = useState<string | null>(null);
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>("image/png");
-  
-  // Performance optimizations
-  const [modelType, setModelType] = useState<"isnet" | "isnet_fp16" | "isnet_quint8">("isnet_fp16");
-  const [device, setDevice] = useState<"cpu" | "gpu">("gpu");
-  const [proxyToWorker, setProxyToWorker] = useState<boolean>(true);
-  const [originalFile, setOriginalFile] = useState<File | Blob | null>(null);
   
   // UI states
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -66,47 +57,59 @@ export default function App() {
     });
   };
 
-  // Run AI Background Removal fully client-side using @imgly/background-removal
-  const runBackgroundRemoval = async (imageSource: File | Blob, customModel = modelType, customDevice = device, customProxy = proxyToWorker) => {
-    const modelLabel = customModel === "isnet_quint8" ? "8-bit Fast" : customModel === "isnet_fp16" ? "16-bit Balanced" : "32-bit HQ";
+  // Run AI Background Removal (Server-side powered for 100% reliability in sandbox)
+  const runBackgroundRemoval = async (imageSource: File | Blob) => {
     setProgress({
       status: "loading_model",
-      percent: 5,
-      message: `Initializing AI Engine (using ${modelLabel} model on ${customDevice.toUpperCase()})...`,
+      percent: 15,
+      message: "Uploading image to AI processing server...",
     });
 
     try {
-      const resultBlob = await removeBackground(imageSource, {
-        model: customModel,
-        device: customDevice,
-        proxyToWorker: customProxy,
-        progress: (key: string, current: number, total: number) => {
-          const percent = Math.round((current / total) * 100);
-          let message = "AI processing image...";
-          
-          if (key.includes("fetch")) {
-            message = `Downloading background removal model assets (${modelLabel})...`;
-          } else if (key.includes("model") || key.includes("load")) {
-            message = "Loading neural network into memory...";
-          } else if (key.includes("compute") || key.includes("process")) {
-            message = `Segmenting subject on ${customDevice.toUpperCase()}...`;
-          } else {
-            message = `${key.charAt(0).toUpperCase() + key.slice(1)}...`;
-          }
-
-          setProgress({
-            status: "processing",
-            percent,
-            message: `${message} (${percent}%)`,
-          });
-        },
-      });
+      const base64WithHeader = await fileToBase64(imageSource);
+      const base64Payload = base64WithHeader.split(",")[1] || base64WithHeader;
 
       setProgress({
         status: "processing",
-        percent: 95,
+        percent: 45,
+        message: "AI segmenting background (cached models run in 1-2s)...",
+      });
+
+      const response = await fetch("/api/remove-background", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image: base64Payload,
+          mimeType: imageSource.type || mimeType || "image/png",
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || "Background removal failed on the server.");
+      }
+
+      const data = await response.json();
+      if (!data.image) {
+        throw new Error("Invalid output returned from background removal server.");
+      }
+
+      setProgress({
+        status: "processing",
+        percent: 85,
         message: "Rendering transparent subject...",
       });
+
+      // Convert returned base64 back to transparent PNG Blob
+      const byteCharacters = atob(data.image);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const resultBlob = new Blob([byteArray], { type: "image/png" });
 
       const url = URL.createObjectURL(resultBlob);
       setProcessedUrl(url);
@@ -146,7 +149,6 @@ export default function App() {
       const base64 = await fileToBase64(blob);
       setOriginalUrl(proxyUrl);
       setOriginalBase64(base64);
-      setOriginalFile(blob);
       
       // Start processing
       runBackgroundRemoval(blob);
@@ -185,7 +187,6 @@ export default function App() {
       const base64 = await fileToBase64(file);
       setOriginalUrl(localUrl);
       setOriginalBase64(base64);
-      setOriginalFile(file);
 
       // Start processing
       runBackgroundRemoval(file);
@@ -237,7 +238,6 @@ export default function App() {
       // Convert dataUrl to Blob for model
       const res = await fetch(dataUrl);
       const blob = await res.blob();
-      setOriginalFile(blob);
 
       runBackgroundRemoval(blob);
     } catch (err: any) {
@@ -269,15 +269,6 @@ export default function App() {
   // Canvas Compositing & Export Download
   const handleExport = () => {
     if (!processedUrl) return;
-
-    // If AI background is pre-blended on the server, download it directly
-    if (bgConfig.type === "ai" && bgConfig.value) {
-      const link = document.createElement("a");
-      link.download = `ai-backdrop-${Date.now()}.png`;
-      link.href = bgConfig.value;
-      link.click();
-      return;
-    }
 
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -361,7 +352,6 @@ export default function App() {
     setOriginalUrl(null);
     setOriginalBase64(null);
     setProcessedUrl(null);
-    setOriginalFile(null);
     setSelectedPresetId(undefined);
     setBgConfig({ type: "transparent", value: "" });
     setProgress({ status: "idle", percent: 0, message: "" });
@@ -386,13 +376,6 @@ export default function App() {
     }
     if (bgConfig.type === "custom") {
       return { 
-        backgroundImage: `url(${bgConfig.value})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center"
-      };
-    }
-    if (bgConfig.type === "ai") {
-      return {
         backgroundImage: `url(${bgConfig.value})`,
         backgroundSize: "cover",
         backgroundPosition: "center"
@@ -499,17 +482,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Performance Engine Optimization Settings */}
-            <OptimizationSettings
-              modelType={modelType}
-              setModelType={setModelType}
-              device={device}
-              setDevice={setDevice}
-              proxyToWorker={proxyToWorker}
-              setProxyToWorker={setProxyToWorker}
-              isProcessing={progress.status !== "idle"}
-            />
-
             {/* Preset Samples */}
             <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 p-5 rounded-3xl shadow-xs">
               <GalleryPresets
@@ -611,8 +583,8 @@ export default function App() {
                   </h3>
                 </div>
 
-                <div className="grid grid-cols-5 gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
-                  {(["transparent", "solid", "gradient", "custom", "ai"] as const).map((type) => (
+                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
+                  {(["transparent", "solid", "gradient", "custom"] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => {
@@ -620,7 +592,6 @@ export default function App() {
                         else if (type === "solid") setBgConfig({ type, value: "#ffffff" });
                         else if (type === "gradient") setBgConfig({ type, value: "grad-sunset" });
                         else if (type === "custom") setBgConfig({ type, value: bgConfig.type === "custom" ? bgConfig.value : "" });
-                        // For AI backdrop, do not reset if already set
                       }}
                       id={`bg-tab-${type}`}
                       className={`py-1.5 text-[10px] font-bold uppercase rounded-lg transition-all cursor-pointer ${
@@ -738,52 +709,9 @@ export default function App() {
                     </div>
                   </div>
                 )}
-
-                {bgConfig.type === "ai" && (
-                  <div className="space-y-2 bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-2xl animate-in fade-in duration-200">
-                    <div className="flex items-start gap-2.5">
-                      <Sparkles className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                          AI Generated Backdrop Active
-                        </h4>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          Use the Gemini AI tool below to write a prompt and generate beautiful custom backdrops.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {/* Performance Engine Optimization Settings */}
-              <OptimizationSettings
-                modelType={modelType}
-                setModelType={setModelType}
-                device={device}
-                setDevice={setDevice}
-                proxyToWorker={proxyToWorker}
-                setProxyToWorker={setProxyToWorker}
-                onReprocess={() => originalFile && runBackgroundRemoval(originalFile)}
-                isProcessing={progress.status !== "idle"}
-              />
-
-              {/* Card 2: AI Backdrop Generator Panel (Visible when ready) */}
-              {processedUrl && originalBase64 && (
-                <AIBackdropManager
-                  imageBase64={originalBase64}
-                  mimeType={mimeType}
-                  onApplyAiBackground={(aiImageUrl) => {
-                    setBgConfig({
-                      type: "ai",
-                      value: aiImageUrl,
-                    });
-                  }}
-                  disabled={progress.status !== "idle"}
-                />
-              )}
-
-              {/* Card 3: Download and Reset Actions */}
+              {/* Actions Card */}
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-5 rounded-3xl shadow-xs space-y-3">
                 <button
                   onClick={handleExport}
@@ -823,7 +751,6 @@ export default function App() {
           <p className="flex items-center gap-1">
             Processed fully on-device with
             <span className="font-bold text-emerald-500">WebAssembly</span>
-            & Gemini
           </p>
         </div>
       </footer>
